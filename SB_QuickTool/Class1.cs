@@ -242,18 +242,9 @@ namespace Autocad.Project1
         }
     }
 
-
-        // =========================================================
-        // MMI = MIRROR SMART FINAL
-        // - Mirror object thường
-        // - Mirror Xref
-        // - Mirror nội dung Block giống REFEDIT
-        // - Fix text/dim readable
-        // - Fix nested block bị ScaleX = -1
-        // - Auto Hide Similar Blocks
-        // =========================================================
-
-namespace MirrorTools
+    //==========================================
+    //==========================================
+    namespace MirrorTools
     {
         public class MirrorCommands
         {
@@ -362,7 +353,6 @@ namespace MirrorTools
                                     // Mirror nguyên khối
                                     ent.TransformBy(matMirrorWorld);
                                 }
-
                                 // Block thường
                                 else
                                 {
@@ -380,7 +370,6 @@ namespace MirrorTools
                                     }
                                 }
                             }
-
                             // Object thường
                             else
                             {
@@ -448,7 +437,6 @@ namespace MirrorTools
                     // Refresh màn hình
                     ed.Regen();
                 }
-
                 // Báo lỗi
                 catch (System.Exception ex)
                 {
@@ -464,7 +452,7 @@ namespace MirrorTools
                 string upper = name.ToUpper();
 
                 string[] dirs = { "FRONT", "REAR", "LEFT", "RIGHT" };
-                string[] letters = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J" ,"K"};
+                string[] letters = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K" };
 
                 foreach (string letter in letters)
                 {
@@ -478,7 +466,7 @@ namespace MirrorTools
                 return false;
             }
 
-            // Mirror nội dung block
+            // Mirror nội dung của Block lớp ngoài cùng
             private void MirrorInPlaceSimulation(BlockReference br, Point3d wStart, Point3d wEnd, Transaction tr)
             {
                 try
@@ -502,17 +490,23 @@ namespace MirrorTools
                     // Loop entity trong block
                     foreach (ObjectId id in btr)
                     {
-                        // Lấy entity
                         Entity ent = tr.GetObject(id, OpenMode.ForWrite) as Entity;
                         if (ent == null) continue;
 
-                        // Mirror entity
+                        // Mirror tất cả các entity bên trong block lớp ngoài
                         ent.TransformBy(matMirrorLocal);
 
-                        // Nếu là nested block
+                        // Nếu thực thể đó là block con (Lớp 2 trở đi)
                         if (ent is BlockReference childBr)
                         {
-                            // Fix negative scale
+                            // Kiểm tra nếu là Block động (Dynamic Block) thì GIỮ NGUYÊN không xử lý sâu hơn
+                            if (childBr.IsDynamicBlock)
+                            {
+                                childBr.RecordGraphicsModified(true);
+                                continue; // Bỏ qua, để nó tự đi theo ma trận block mẹ
+                            }
+
+                            // Nếu là Block thường ở lớp 2: Tiến hành fix âm scale để không bị ngược text/hatch
                             childBr.ScaleFactors = new Scale3d(
                                 Math.Abs(childBr.ScaleFactors.X),
                                 Math.Abs(childBr.ScaleFactors.Y),
@@ -521,67 +515,55 @@ namespace MirrorTools
                             // Update graphics
                             childBr.RecordGraphicsModified(true);
 
-                            // Reset dynamic block
-                            try { childBr.ResetBlock(); } catch { }
-
-                            // Recursive nested block
+                            // Đệ quy quét tiếp vào bên trong block thường này (Lớp 3, 4...)
                             MirrorNestedBlock(childBr, tr);
                         }
-
-                        // Object thường
                         else
                         {
-                            // Fix text / dim
+                            // Fix text / dim cho thực thể thường ở lớp 1
                             FixAnnotation(ent);
                         }
                     }
                 }
-
-                // Báo lỗi
                 catch (System.Exception ex)
                 {
                     Application.ShowAlertDialog("Error in MirrorInPlaceSimulation:\n" + ex.Message);
                 }
             }
 
-            // Recursive nested block
+            // Đệ quy xử lý các block thường lồng sâu phía trong (Lớp 3 trở đi)
             private void MirrorNestedBlock(BlockReference br, Transaction tr)
             {
                 try
                 {
-                    // Lấy block definition
                     BlockTableRecord btr = (BlockTableRecord)tr.GetObject(br.BlockTableRecord, OpenMode.ForWrite);
 
-                    // Loop entity trong block
                     foreach (ObjectId id in btr)
                     {
-                        // Lấy entity
                         Entity ent = tr.GetObject(id, OpenMode.ForWrite) as Entity;
                         if (ent == null) continue;
 
-                        // Nếu là block con
                         if (ent is BlockReference childBr)
                         {
-                            // Fix negative scale
+                            // Nếu gặp block động ở tầng sâu này cũng bỏ qua luôn
+                            if (childBr.IsDynamicBlock)
+                            {
+                                childBr.RecordGraphicsModified(true);
+                                continue;
+                            }
+
                             childBr.ScaleFactors = new Scale3d(
                                 Math.Abs(childBr.ScaleFactors.X),
                                 Math.Abs(childBr.ScaleFactors.Y),
                                 Math.Abs(childBr.ScaleFactors.Z));
 
-                            // Update graphics
                             childBr.RecordGraphicsModified(true);
 
-                            // Reset dynamic block
-                            try { childBr.ResetBlock(); } catch { }
-
-                            // Recursive tiếp
+                            // Tiếp tục đệ quy sâu hơn
                             MirrorNestedBlock(childBr, tr);
                         }
-
-                        // Object thường
                         else
                         {
-                            // Fix text / dim
                             FixAnnotation(ent);
                         }
                     }
@@ -594,7 +576,6 @@ namespace MirrorTools
             {
                 try
                 {
-                    // Fix DBText
                     if (ent is DBText txt)
                     {
                         if (txt.Normal.Z < 0)
@@ -603,8 +584,6 @@ namespace MirrorTools
                             txt.Rotation = -txt.Rotation;
                         }
                     }
-
-                    // Fix MText
                     else if (ent is MText mtxt)
                     {
                         if (mtxt.Normal.Z < 0)
@@ -613,26 +592,18 @@ namespace MirrorTools
                             mtxt.Rotation = -mtxt.Rotation;
                         }
                     }
-
-                    // Fix rotated dimension
                     else if (ent is RotatedDimension rotDim)
                     {
                         rotDim.Normal = Vector3d.ZAxis;
                         rotDim.Rotation = Math.PI - rotDim.Rotation;
-
                         try { rotDim.RecomputeDimensionBlock(true); } catch { }
                     }
-
-                    // Fix dimension thường
                     else if (ent is Dimension dim)
                     {
                         dim.Normal = Vector3d.ZAxis;
-
                         try { dim.RecomputeDimensionBlock(true); } catch { }
                     }
                 }
-
-                // Báo lỗi
                 catch (System.Exception ex)
                 {
                     Application.ShowAlertDialog("Error in FixAnnotation:\n" + ex.Message);
@@ -644,32 +615,20 @@ namespace MirrorTools
             {
                 try
                 {
-                    // Nếu là dynamic block
                     if (br.IsDynamicBlock)
                     {
-                        // Lấy dynamic block definition
-                        BlockTableRecord btr =
-                            (BlockTableRecord)tr.GetObject(br.DynamicBlockTableRecord, OpenMode.ForRead);
-
-                        // Trả về dynamic name
+                        BlockTableRecord btr = (BlockTableRecord)tr.GetObject(br.DynamicBlockTableRecord, OpenMode.ForRead);
                         return btr.Name;
                     }
-
-                    // Trả về tên block thường
                     return br.Name;
                 }
-
-                // Báo lỗi
                 catch (System.Exception ex)
                 {
                     Application.ShowAlertDialog("Error in GetEffectiveName:\n" + ex.Message);
                     return "";
                 }
             }
-
-
         }
     }
-  }
- 
+}
 
